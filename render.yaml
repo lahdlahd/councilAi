@@ -1,0 +1,39 @@
+# Render Blueprint — Council backend (long-lived web service, NOT serverless).
+# The ambient council session loop + WebSocket hub require a persistent process,
+# so this runs as a Docker web service. Render injects $PORT (the Dockerfile uses it).
+#
+# Deploy: push to GitHub, then in Render → "New +" → "Blueprint" and point at this repo.
+# Set the `sync: false` secrets in the Render dashboard after the first deploy.
+
+services:
+  - type: web
+    name: council-api
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    # Use a paid instance so the always-on session truly stays warm (free tier idles).
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: COUNCIL_SYMBOL
+        value: BTCUSDT
+      - key: COUNCIL_ROUND_INTERVAL_SEC
+        value: "6"
+      - key: CADENCE_TOKENS_PER_SEC
+        value: "18"
+      # Comma-separated; set to your deployed frontend origin(s).
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # LLM — leave unset to run the data-driven offline mode.
+      - key: QWEN_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      # Supabase (Trade Journal). Leave unset to disable persistence.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
