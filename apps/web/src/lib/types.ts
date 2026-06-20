@@ -6,6 +6,7 @@ export type Side = "BUY" | "SELL" | "HOLD";
 export type Stance = "opening" | "agree" | "disagree" | "challenge" | "neutral";
 export type Phase = "idle" | "debating" | "voting" | "decided" | "blocked";
 export type ConnectionState = "ok" | "degraded";
+export type MarketType = "spot" | "futures";
 
 export interface Macd {
   macd: number;
@@ -42,6 +43,14 @@ export interface MarketSnapshot {
   indicators: Indicators | null;
   ts: number;
   source: "bitget" | "coingecko";
+  market: MarketType;
+}
+
+export interface SymbolInfo {
+  symbol: string;
+  base: string;
+  quote: string;
+  market: MarketType;
 }
 
 export interface AgentProfile {
@@ -153,3 +162,141 @@ export type WsEvent =
   | { type: "council.confidence"; score: number; breakdown: ConfidenceBreakdown }
   | { type: "council.veto"; veto: VetoInfo }
   | { type: "council.recommendation"; recommendation: Recommendation };
+
+// ---- Paper trading / ledger ------------------------------------------------
+export type TradeDirection = "long" | "short";
+export type TradeStatus = "open" | "closed" | "cancelled";
+
+export interface LedgerEntry {
+  tradeId: string;
+  openedAt: number;
+  symbol: string;
+  market: MarketType;
+  direction: TradeDirection;
+  entryPrice: number;
+  quantity: number;
+  currentPrice: number;
+  pnlPct: number;
+  pnlUsd: number;
+  status: TradeStatus;
+  confidence: number | null;
+  sessionId: string | null;
+}
+
+export interface LedgerPage {
+  items: LedgerEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface TradeDetail {
+  trade: LedgerEntry;
+  session: JournalEntry | null;
+}
+
+export interface PaperTrade {
+  id: string;
+  sessionId: string | null;
+  symbol: string;
+  market: MarketType;
+  direction: TradeDirection;
+  quantity: number;
+  entryPrice: number;
+  exitPrice: number | null;
+  lastMarkPrice: number | null;
+  status: TradeStatus;
+  confidence: number | null;
+  reasoning: string | null;
+  fee: number;
+  realizedPnl: number;
+  unrealizedPnl: number | null;
+  currentValue: number | null;
+  pnlPct: number | null;
+  openedAt: number;
+  closedAt: number | null;
+}
+
+export interface PortfolioState {
+  portfolioId: string;
+  baseCurrency: string;
+  startingBalance: number;
+  cash: number;
+  equity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+  totalReturnPct: number;
+  dailyReturnPct: number;
+  avgConfidence: number;
+  openPositions: PaperTrade[];
+  closedPositions: PaperTrade[];
+  tradesCount: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+}
+
+export interface TradeRef {
+  tradeId: string;
+  symbol: string;
+  direction: TradeDirection;
+  returnPct: number;
+  pnlUsd: number;
+  sessionId: string | null;
+}
+
+export interface AgentAccuracy {
+  agentId: AgentId;
+  accuracy: number;
+  correct: number;
+  total: number;
+}
+
+export interface PerformanceAnalytics {
+  sampleSize: number;
+  winRate: number;
+  avgReturnPct: number;
+  bestTrade: TradeRef | null;
+  worstTrade: TradeRef | null;
+  sharpeRatio: number | null;
+  profitFactor: number | null;
+  agentAccuracy: AgentAccuracy[];
+  vetoSuccessRate: number | null;
+  vetoCount: number;
+  vetoEvaluated: number;
+}
+
+export type TradeAction = "open" | "increase" | "reduce" | "close" | "flip";
+
+export interface TradeEvent {
+  ts: number;
+  eventType: TradeAction;
+  tradeId: string;
+  sessionId: string | null;
+  symbol: string;
+  market: MarketType;
+  direction: TradeDirection;
+  price: number;
+  quantity: number;
+  cashDelta: number;
+  realizedPnlDelta: number;
+  balanceAfter: number;
+}
+
+export interface ComplianceReport {
+  generatedAt: number;
+  portfolioId: string;
+  baseCurrency: string;
+  startingBalance: number;
+  equity: number;
+  cash: number;
+  realizedPnl: number;
+  totalPnl: number;
+  totalReturnPct: number;
+  tradesCount: number;
+  winRate: number;
+  records: TradeEvent[];
+  note: string;
+}

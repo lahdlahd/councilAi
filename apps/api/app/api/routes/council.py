@@ -1,7 +1,7 @@
-"""Council control routes.
+"""Council control routes (advisory only — never places orders).
 
-  GET  /council         -> current subject + supported symbols
-  POST /council/symbol  -> switch the council's subject (takes effect next round)
+  GET  /council         -> idle/running state + the last session, if any
+  POST /council/start    -> convene the council on {symbol, market}; streams over /ws/council
 """
 
 from __future__ import annotations
@@ -9,14 +9,15 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.config import SUPPORTED_SYMBOLS, SYMBOL_MAP
+from app.domain.enums import MarketType
 from app.services.council.session import SessionManager
 
 router = APIRouter(prefix="/council", tags=["council"])
 
 
-class SymbolRequest(BaseModel):
+class StartRequest(BaseModel):
     symbol: str
+    market: MarketType = MarketType.SPOT
 
 
 def _sessions(request: Request) -> SessionManager:
@@ -26,13 +27,20 @@ def _sessions(request: Request) -> SessionManager:
 @router.get("")
 async def council_state(request: Request) -> dict:
     sm = _sessions(request)
-    return {"symbol": sm.symbol, "supported": SUPPORTED_SYMBOLS}
+    live = sm.current
+    return {
+        "running": sm.running,
+        "session": (
+            {"sessionId": live.session_id, "symbol": live.symbol,
+             "market": live.market.value, "phase": live.phase}
+            if live else None
+        ),
+    }
 
 
-@router.post("/symbol")
-async def set_symbol(body: SymbolRequest, request: Request) -> dict:
-    resolved = SYMBOL_MAP.get(body.symbol.lower(), body.symbol.upper())
-    if resolved not in SUPPORTED_SYMBOLS:
-        raise HTTPException(status_code=400, detail=f"unsupported symbol: {body.symbol}")
-    _sessions(request).set_symbol(resolved)
-    return {"symbol": resolved, "applied": "next_round"}
+@router.post("/start")
+async def start_council(body: StartRequest, request: Request) -> dict:
+    symbol = body.symbol.strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    return await _sessions(request).start(symbol, body.market)

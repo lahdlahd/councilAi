@@ -16,6 +16,9 @@ from app.domain.models import (
     AgentProfile,
     ConfidenceBreakdown,
     MarketSnapshot,
+    PaperTrade,
+    PnlSnapshot,
+    PortfolioState,
     Recommendation,
     Vote,
     VetoInfo,
@@ -116,6 +119,21 @@ class CouncilRecommendationEvent(_Base):
     recommendation: Recommendation
 
 
+class PaperTradeEvent(_Base):
+    type: Literal["paper.trade"] = "paper.trade"
+    trade: PaperTrade
+
+
+class PortfolioUpdateEvent(_Base):
+    type: Literal["portfolio.update"] = "portfolio.update"
+    portfolio: PortfolioState
+
+
+class PnlUpdateEvent(_Base):
+    type: Literal["pnl.update"] = "pnl.update"
+    pnl: PnlSnapshot
+
+
 # The discriminated union. New event types append without breaking decoders.
 WsEvent = Annotated[
     Union[
@@ -132,6 +150,9 @@ WsEvent = Annotated[
         CouncilConfidenceEvent,
         CouncilRecommendationEvent,
         CouncilVetoEvent,
+        PaperTradeEvent,
+        PortfolioUpdateEvent,
+        PnlUpdateEvent,
     ],
     Field(discriminator="type"),
 ]

@@ -158,3 +158,37 @@ async def test_recommendation_carries_consensus():
     # Bullish snapshot -> all four analysts BUY -> consensus reached.
     assert rec.consensus_reached is True
     assert rec.consensus_ratio == 1.0
+
+
+def test_veto_overrides_unanimous_votes():
+    """Risk Manager overrides ALL agents: even a unanimous BUY is blocked to HOLD."""
+    from app.domain.models import Vote, VetoInfo
+    from app.services.council.state import CouncilState
+    from app.services.council.voting import tally
+
+    snap = _bullish()
+    votes = [Vote(agent_id=a, side=Side.BUY, rationale="")
+             for a in (AgentId.TECHNICAL, AgentId.NEWS, AgentId.QUANT, AgentId.RISK)]
+    state = CouncilState(
+        session_id="s", symbol="BTCUSDT", snapshot=snap, votes=votes,
+        veto=VetoInfo(by_agent=AgentId.RISK, reason="too dangerous", risk_score=0.9,
+                      factors=["extreme volatility"]),
+    )
+    result = tally(state)
+    assert result["recommendation"].side == Side.HOLD     # overridden despite 4×BUY
+    assert result["recommendation"].vetoed is True
+    assert result["phase"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_risk_manager_vetoes_a_trap():
+    """A bull trap (rising momentum into a downtrend, overbought RSI) is vetoed even
+    without extreme volatility — the Risk Manager is dangerous."""
+    council = await _council()
+    trap = _snapshot(price=50000, change=8.0, rsi=80, hist=-60,
+                     ema12=51000, ema26=52000, ema50=53000, vol=0.5)  # elevated, not extreme
+    result = await council.run_round(trap)
+    assert result["veto"] is not None
+    assert any("trap" in f.lower() for f in result["veto"].factors)
+    assert result["recommendation"].side == Side.HOLD
+    assert result["phase"] == "blocked"

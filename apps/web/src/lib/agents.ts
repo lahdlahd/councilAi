@@ -1,4 +1,4 @@
-import type { AgentId, Side } from "./types";
+import type { AgentId, Side, Stance } from "./types";
 
 // Semantic, disciplined accents — no blue/purple. Risk carries the warning red;
 // the chairman (execution) wears cream + a gold ring. The two analysts split the
@@ -21,15 +21,39 @@ export const SIDE_COLOR: Record<Side, string> = {
 
 const FALLBACK_PROFILE: Record<
   AgentId,
-  { name: string; specialty: string; avatar: string }
+  { name: string; specialty: string; avatar: string; persona: string }
 > = {
-  technical: { name: "Technical Analyst", specialty: "RSI · MACD · EMA · S/R", avatar: "📈" },
-  news: { name: "News Analyst", specialty: "sentiment · ETF · macro", avatar: "📰" },
-  quant: { name: "Quant Analyst", specialty: "probability · statistics", avatar: "🧮" },
-  risk: { name: "Risk Manager", specialty: "drawdown · volatility · exposure", avatar: "🛡️" },
-  execution: { name: "Execution Agent", specialty: "synthesis · decision", avatar: "⚖️" },
+  technical: {
+    name: "Technical Analyst", specialty: "RSI · MACD · EMA · S/R", avatar: "📈",
+    persona: "Chart purist — structure over noise, opens the case",
+  },
+  news: {
+    name: "News Analyst", specialty: "sentiment · ETF · macro", avatar: "📰",
+    persona: "Momentum chaser — reads the room, trusts the tape",
+  },
+  quant: {
+    name: "Quant Analyst", specialty: "probability · statistics", avatar: "🧮",
+    persona: "Cold and mathematical — fades stretched extremes",
+  },
+  risk: {
+    name: "Risk Manager", specialty: "drawdown · volatility · exposure", avatar: "🛡️",
+    persona: "Paranoid guardian — holds the veto, protects capital",
+  },
+  execution: {
+    name: "Execution Agent", specialty: "synthesis · decision", avatar: "⚖️",
+    persona: "The chairman — weighs the room, calls the verdict",
+  },
 };
 export const profileFor = (id: AgentId) => FALLBACK_PROFILE[id];
+
+// How each debate stance reads on an agent card.
+export const STANCE_META: Record<Stance, { label: string; color: string }> = {
+  opening: { label: "Opening", color: "#C9A227" },
+  agree: { label: "Agrees", color: "#2B8A6E" },
+  disagree: { label: "Disagrees", color: "#A16B3B" },
+  challenge: { label: "Challenges", color: "#A54B4B" },
+  neutral: { label: "Neutral", color: "#8C8579" },
+};
 
 // ---- number formatting -----------------------------------------------------
 export function fmtPrice(n: number): string {

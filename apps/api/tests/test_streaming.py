@@ -61,7 +61,7 @@ def _snapshot(*, change, rsi, hist, ema12, ema26, ema50, vol, price=67000) -> Ma
 
 
 def _fast_settings() -> Settings:
-    return Settings(cadence_tokens_per_sec=10_000, thinking_pause_sec=0.0)
+    return Settings(cadence_tokens_per_sec=10_000, thinking_pause_sec=0.0, vote_reveal_pause_sec=0.0)
 
 
 async def _collect(snapshot) -> list[WsEvent]:

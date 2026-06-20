@@ -17,6 +17,9 @@ from app.domain.enums import AgentId, Side, Stance
 from app.domain.models import AgentMessage, AgentProfile
 from app.services.council.signal import Signal, read_signal
 from app.services.council.state import CouncilState, transcript
+
+# Imported lazily-safe: debate.py does not import base, so no cycle.
+from app.services.council.debate import name as _agent_name  # noqa: E402
 from app.services.llm.client import LLMClient
 from app.utils.logging import get_logger
 
@@ -131,14 +134,64 @@ class Agent:
         return (
             f"LIVE MARKET DATA:\n{self._evidence(state)}\n\n"
             f"DEBATE SO FAR:\n{transcript(state)}\n\n"
-            "Respond as your character. Reference and react to colleagues where relevant. "
-            "Reply with a STRICT JSON object only, no prose, with keys: "
+            "Respond as your character. If colleagues have already spoken, you MUST name at least "
+            "one of them and explicitly AGREE or DISAGREE with their specific claim — disagree "
+            "whenever your data contradicts theirs; do not just restate your own analysis in "
+            "isolation. Reply with a STRICT JSON object only, no prose, with keys: "
             '"message" (1-3 sentences, in-character), '
             '"stance" (opening|agree|disagree|challenge|neutral), '
             f'"vote" (BUY|SELL|HOLD or null — {vote_clause.strip()}), '
             '"confidence" (0-100), '
             '"references" (array of agent ids you respond to: technical|news|quant|risk|execution).'
             + self._extra_schema()
+        )
+
+    async def rebut(self, state: CouncilState, llm: LLMClient, challenger: AgentId) -> AgentOutput:
+        """Defend this agent's prior position against a challenger (no re-vote)."""
+        if llm.is_offline:
+            return self._offline_rebut(state, challenger)
+        try:
+            raw = await llm.complete(
+                system=self.system_prompt, user=self._rebut_prompt(state, challenger), json_mode=True
+            )
+            out = self._parse(raw)
+            out.vote = None
+            if not out.references:
+                out.references = [challenger]
+            if out.stance not in (Stance.CHALLENGE, Stance.AGREE):
+                out.stance = Stance.CHALLENGE
+            return out
+        except Exception as exc:  # noqa: BLE001
+            log.warning("%s rebuttal LLM path failed (%s); using offline", self.id.value, exc)
+            return self._offline_rebut(state, challenger)
+
+    def _rebut_prompt(self, state: CouncilState, challenger: AgentId) -> str:
+        return (
+            f"LIVE MARKET DATA:\n{self._evidence(state)}\n\n"
+            f"DEBATE SO FAR:\n{transcript(state)}\n\n"
+            f"The {_agent_name(challenger)} challenged your position. DEFEND it in 1-2 sentences, "
+            "addressing them by name and citing your data. Concede only if their evidence is "
+            'clearly stronger. Reply with STRICT JSON: "message", "stance" (challenge if '
+            f'defending, agree if conceding), "references" (array including "{challenger.value}").'
+        )
+
+    def _offline_rebut(self, state: CouncilState, challenger: AgentId) -> AgentOutput:
+        snap = state["snapshot"]
+        my = next((v.side for v in state.get("votes", []) if v.agent_id == self.id), None)
+        mine = [m for m in state.get("messages", []) if m.agent_id == self.id]
+        conviction = mine[-1].confidence if mine else 55.0
+        cname = _agent_name(challenger)
+        if conviction < 50:
+            return AgentOutput(
+                text=f"Fair challenge from the {cname}. I'll soften my conviction — but the read "
+                f"isn't wrong enough to flip.",
+                stance=Stance.AGREE, vote=None, confidence=conviction, references=[challenger],
+            )
+        side_txt = my.value if my else "my call"
+        return AgentOutput(
+            text=f"To the {cname}: I hear you, but my evidence on {snap.symbol} hasn't changed — "
+            f"it still supports {side_txt}, and I stand by it.",
+            stance=Stance.CHALLENGE, vote=None, confidence=conviction, references=[challenger],
         )
 
     def _extra_schema(self) -> str:
@@ -170,6 +223,7 @@ class Agent:
             references=_to_refs(data.get("references")),
             veto=bool(data.get("veto", False)),
             veto_reason=data.get("veto_reason"),
+            veto_factors=data.get("veto_factors") if isinstance(data.get("veto_factors"), list) else [],
             risk_score=_opt_float(data.get("risk_score")),
             sentiment=_opt_float(data.get("sentiment")),
         )

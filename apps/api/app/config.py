@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     coingecko_api_key: str | None = None
 
     # ---- Indicator / candle settings ---------------------------------------
-    candle_granularity: str = "15min"  # Bitget v2 spot: 1min/5min/15min/30min/1h/4h...
+    # Bitget spot granularities: 1min/5min/15min/30min/1h/4h...
+    # Bitget futures (mix) granularities: 1m/5m/15m/30m/1H/4H...  (different format!)
+    candle_granularity: str = "15min"          # spot default (back-compat name)
+    candle_granularity_futures: str = "15m"     # futures default
+    futures_product_type: str = "USDT-FUTURES"  # Bitget mix productType
     candle_limit: int = Field(default=200, ge=60, le=1000)
 
     # ---- Caching ------------------------------------------------------------
@@ -61,6 +65,16 @@ class Settings(BaseSettings):
     council_round_interval_sec: float = 6.0    # pause between completed rounds
     cadence_tokens_per_sec: float = 18.0       # word-by-word streaming pace
     thinking_pause_sec: float = 0.7            # how long "thinking" shows before tokens
+    max_rebuttals: int = 2  # how many challenged agents may defend per round
+    vote_reveal_pause_sec: float = 0.25  # pacing of the post-debate vote roll-call
+
+    # ---- Paper trading ------------------------------------------------------
+    paper_starting_balance: float = 100000.0
+    paper_position_fraction: float = 0.10   # fraction of account value at full confidence
+    paper_min_notional: float = 25.0
+    paper_min_confidence: float = 0.0       # skip trades below this council confidence
+    paper_fee_rate: float = 0.0006          # 0.06% simulated taker fee
+    paper_pnl_interval_sec: float = 2.0     # live PnL stream cadence while positions are open
 
     # ---- Supabase (Trade Journal persistence) ------------------------------
     # If unset, the journal degrades to a no-op (the app still runs in dev).

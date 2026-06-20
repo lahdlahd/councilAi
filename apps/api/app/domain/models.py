@@ -9,7 +9,16 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import AgentId, DataSource, Side, Stance
+from app.domain.enums import (
+    AgentId,
+    DataSource,
+    MarketType,
+    Side,
+    Stance,
+    TradeAction,
+    TradeDirection,
+    TradeStatus,
+)
 
 
 def _camel(s: str) -> str:
@@ -82,6 +91,16 @@ class MarketSnapshot(_Base):
     indicators: Indicators | None = None
     ts: int = Field(description="Source timestamp, ms epoch")
     source: DataSource = DataSource.BITGET
+    market: MarketType = MarketType.SPOT
+
+
+class SymbolInfo(_Base):
+    """A selectable instrument (for the symbol picker)."""
+
+    symbol: str
+    base: str
+    quote: str
+    market: MarketType
 
 
 # ---------------------------------------------------------------------------
@@ -188,3 +207,188 @@ class JournalEntry(_Base):
     confidence: float | None = None
     confidence_breakdown: ConfidenceBreakdown | None = None
     recommendation: Recommendation | None = None
+
+
+# ---- Paper trading ---------------------------------------------------------
+class PaperTrade(_Base):
+    """A simulated position from open to close. Fills are against live Bitget
+    prices; nothing is ever sent to an exchange."""
+
+    id: str
+    session_id: str | None = Field(default=None, description="Council decision that opened it")
+    symbol: str
+    market: MarketType = MarketType.SPOT
+    direction: TradeDirection
+    quantity: float
+    entry_price: float
+    exit_price: float | None = None
+    last_mark_price: float | None = None
+    status: TradeStatus = TradeStatus.OPEN
+    confidence: float | None = None
+    reasoning: str | None = None
+    fee: float = 0.0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float | None = None
+    current_value: float | None = None   # quantity × current mark
+    pnl_pct: float | None = None          # unrealized PnL as % of entry notional
+    opened_at: int = Field(description="ms epoch")
+    closed_at: int | None = None
+
+
+class PortfolioState(_Base):
+    """A snapshot of the simulated account for the UI."""
+
+    portfolio_id: str
+    base_currency: str = "USDT"
+    starting_balance: float
+    cash: float
+    equity: float
+    realized_pnl: float
+    unrealized_pnl: float
+    total_pnl: float
+    total_return_pct: float
+    daily_return_pct: float = 0.0
+    avg_confidence: float = 0.0
+    open_positions: list[PaperTrade] = Field(default_factory=list)
+    closed_positions: list[PaperTrade] = Field(default_factory=list)
+    trades_count: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate: float = 0.0
+
+
+# ---- Live PnL --------------------------------------------------------------
+class LivePosition(_Base):
+    """A live, marked-to-market view of one open paper position."""
+
+    id: str
+    symbol: str
+    market: MarketType
+    direction: TradeDirection
+    quantity: float
+    entry_price: float
+    mark_price: float
+    current_value: float       # quantity × mark
+    unrealized_pnl: float
+    pnl_pct: float             # unrealized PnL as % of entry notional
+
+
+class PnlSnapshot(_Base):
+    """A streamed snapshot of live PnL across the whole account."""
+
+    ts: int                    # ms epoch
+    cash: float
+    equity: float
+    unrealized_pnl: float
+    realized_pnl: float
+    total_pnl: float
+    total_return_pct: float
+    positions: list[LivePosition] = Field(default_factory=list)
+
+
+# ---- Trade Ledger ----------------------------------------------------------
+class LedgerEntry(_Base):
+    """One row of the trade ledger — unified across open and closed trades.
+
+    For open trades, current_price/pnl are live (marked-to-market); for closed
+    trades they reflect the exit price and realized PnL.
+    """
+
+    trade_id: str
+    opened_at: int                 # timestamp (ms epoch)
+    symbol: str                    # trading pair
+    market: MarketType
+    direction: TradeDirection
+    entry_price: float
+    quantity: float
+    current_price: float
+    pnl_pct: float
+    pnl_usd: float
+    status: TradeStatus
+    confidence: float | None = None
+    session_id: str | None = None  # council session id
+
+
+class LedgerPage(_Base):
+    items: list[LedgerEntry] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class TradeDetail(_Base):
+    """Everything needed to explain WHY a trade happened: the trade outcome plus
+    the full council session that produced it (snapshot, debate, votes, confidence,
+    decision)."""
+
+    trade: LedgerEntry
+    session: JournalEntry | None = None
+
+
+# ---- Performance analytics -------------------------------------------------
+class TradeRef(_Base):
+    trade_id: str
+    symbol: str
+    direction: TradeDirection
+    return_pct: float
+    pnl_usd: float
+    session_id: str | None = None
+
+
+class AgentAccuracy(_Base):
+    agent_id: AgentId
+    accuracy: float    # % of directional votes that matched the market's move
+    correct: int
+    total: int
+
+
+class PerformanceAnalytics(_Base):
+    sample_size: int = 0            # number of closed trades
+    win_rate: float = 0.0
+    avg_return_pct: float = 0.0
+    best_trade: TradeRef | None = None
+    worst_trade: TradeRef | None = None
+    sharpe_ratio: float | None = None      # per-trade, rf=0; None if < 2 trades
+    profit_factor: float | None = None     # gross profit / gross loss; None if no losses
+    agent_accuracy: list[AgentAccuracy] = Field(default_factory=list)
+    veto_success_rate: float | None = None # % of evaluated vetoes that avoided a loss
+    veto_count: int = 0
+    veto_evaluated: int = 0
+
+
+# ---- Compliance / trading record -------------------------------------------
+class TradeEvent(_Base):
+    """One immutable line of the trading record: a fill (open/increase/close)
+    with its balance change and any realized PnL."""
+
+    ts: int                        # timestamp (ms epoch)
+    event_type: TradeAction
+    trade_id: str
+    session_id: str | None = None
+    symbol: str                    # trading pair
+    market: MarketType
+    direction: TradeDirection
+    price: float                   # fill price
+    quantity: float
+    cash_delta: float              # balance change (+/-)
+    realized_pnl_delta: float = 0.0
+    balance_after: float
+
+
+class ComplianceReport(_Base):
+    """Self-contained paper-trading record for hackathon submission."""
+
+    generated_at: int
+    portfolio_id: str
+    base_currency: str
+    starting_balance: float
+    equity: float
+    cash: float
+    realized_pnl: float
+    total_pnl: float
+    total_return_pct: float
+    trades_count: int
+    win_rate: float
+    records: list[TradeEvent] = Field(default_factory=list)
+    note: str

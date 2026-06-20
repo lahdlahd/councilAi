@@ -78,8 +78,16 @@ def _make_agent_node(agent: Agent, llm: LLMClient):
 
 
 def build_council_graph(agents: dict[AgentId, Agent], llm: LLMClient):
-    """Compile the council StateGraph. Returns a runnable graph."""
+    """Compile the council StateGraph. Returns a runnable graph.
+
+    Flow: START → (voting analysts) → tally → chairman(execution) → END.
+    The chairman speaks LAST, after the council result is computed, so it can
+    summarize, cite the confidence score, and explain the final recommendation.
+    """
     graph = StateGraph(CouncilState)
+
+    voting = [a for a in _ORDER if agents[a].casts_vote]
+    chairs = [a for a in _ORDER if not agents[a].casts_vote]
 
     for agent_id in _ORDER:
         graph.add_node(agent_id.value, _make_agent_node(agents[agent_id], llm))
@@ -89,12 +97,17 @@ def build_council_graph(agents: dict[AgentId, Agent], llm: LLMClient):
 
     graph.add_node("tally", tally_node)
 
-    # Linear committee flow.
-    graph.add_edge(START, _ORDER[0].value)
-    for prev, nxt in zip(_ORDER, _ORDER[1:]):
+    # Analysts deliberate in order, then tally, then the chairman synthesizes.
+    graph.add_edge(START, voting[0].value)
+    for prev, nxt in zip(voting, voting[1:]):
         graph.add_edge(prev.value, nxt.value)
-    graph.add_edge(_ORDER[-1].value, "tally")
-    graph.add_edge("tally", END)
+    graph.add_edge(voting[-1].value, "tally")
+
+    prev = "tally"
+    for chair in chairs:
+        graph.add_edge(prev, chair.value)
+        prev = chair.value
+    graph.add_edge(prev, END)
 
     return graph.compile()
 

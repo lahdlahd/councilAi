@@ -16,6 +16,30 @@ class DataSource(str, Enum):
     COINGECKO = "coingecko"
 
 
+class MarketType(str, Enum):
+    SPOT = "spot"
+    FUTURES = "futures"  # Bitget USDT-M perpetual ("mix")
+
+
+class TradeDirection(str, Enum):
+    LONG = "long"
+    SHORT = "short"
+
+
+class TradeStatus(str, Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+class TradeAction(str, Enum):
+    OPEN = "open"
+    INCREASE = "increase"
+    REDUCE = "reduce"
+    CLOSE = "close"
+    FLIP = "flip"
+
+
 class ConnectionState(str, Enum):
     OK = "ok"
     DEGRADED = "degraded"  # e.g. running on CoinGecko fallback

@@ -1,85 +1,71 @@
-"""Market REST routes.
+"""Market REST routes — spot + futures.
 
-  GET /market/btc | /eth | /sol | /xrp | /doge   -> full MarketSnapshot
-  GET /market/{symbol}                            -> generic (any supported symbol)
-  GET /market                                     -> all supported snapshots
+  GET /symbols?market=spot|futures            -> selectable instruments (volume-sorted)
+  GET /market?symbol=BTCUSDT&market=spot       -> full MarketSnapshot
+  GET /market/candles?symbol=&market=&limit=   -> OHLC bars for the chart
 
-Explicit per-coin routes are declared (as the spec requests) and delegate to a
-shared handler so there's no duplication.
+Legacy per-coin routes (/market/btc ...) are kept for convenience (spot).
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_market_service
 from app.config import SYMBOL_MAP
-from app.domain.models import Candle, MarketSnapshot
+from app.domain.enums import MarketType
+from app.domain.models import Candle, MarketSnapshot, SymbolInfo
 from app.services.market.service import MarketService
 
-router = APIRouter(prefix="/market", tags=["market"])
+router = APIRouter(tags=["market"])
 
 
-async def _snapshot(symbol: str, service: MarketService) -> MarketSnapshot:
+async def _snapshot(symbol: str, market: MarketType, service: MarketService) -> MarketSnapshot:
     try:
-        return await service.get_snapshot(symbol)
+        return await service.get_snapshot(symbol, market)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"market data unavailable: {exc}")
 
 
-@router.get("", response_model=list[MarketSnapshot])
-async def all_markets(
+@router.get("/symbols", response_model=list[SymbolInfo])
+async def list_symbols(
+    market: MarketType = Query(default=MarketType.SPOT),
     service: MarketService = Depends(get_market_service),
-) -> list[MarketSnapshot]:
-    return [await _snapshot(sym, service) for sym in SYMBOL_MAP.values()]
+) -> list[SymbolInfo]:
+    try:
+        return await service.list_symbols(market)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"symbol list unavailable: {exc}")
 
 
-# ---- Explicit per-coin endpoints (as specified) ----------------------------
-@router.get("/btc", response_model=MarketSnapshot)
-async def market_btc(service: MarketService = Depends(get_market_service)):
-    return await _snapshot("BTCUSDT", service)
+@router.get("/market", response_model=MarketSnapshot)
+async def market_snapshot(
+    symbol: str = Query(description="e.g. BTCUSDT"),
+    market: MarketType = Query(default=MarketType.SPOT),
+    service: MarketService = Depends(get_market_service),
+) -> MarketSnapshot:
+    return await _snapshot(symbol.upper(), market, service)
 
 
-@router.get("/eth", response_model=MarketSnapshot)
-async def market_eth(service: MarketService = Depends(get_market_service)):
-    return await _snapshot("ETHUSDT", service)
-
-
-@router.get("/sol", response_model=MarketSnapshot)
-async def market_sol(service: MarketService = Depends(get_market_service)):
-    return await _snapshot("SOLUSDT", service)
-
-
-@router.get("/xrp", response_model=MarketSnapshot)
-async def market_xrp(service: MarketService = Depends(get_market_service)):
-    return await _snapshot("XRPUSDT", service)
-
-
-@router.get("/doge", response_model=MarketSnapshot)
-async def market_doge(service: MarketService = Depends(get_market_service)):
-    return await _snapshot("DOGEUSDT", service)
-
-
-# ---- Candles for charting --------------------------------------------------
-@router.get("/{symbol}/candles", response_model=list[Candle])
+@router.get("/market/candles", response_model=list[Candle])
 async def market_candles(
-    symbol: str = Path(description="Friendly key (btc) or full symbol (BTCUSDT)"),
-    granularity: str | None = Query(default=None, description="e.g. 1min, 15min, 1h"),
+    symbol: str = Query(description="e.g. BTCUSDT"),
+    market: MarketType = Query(default=MarketType.SPOT),
     limit: int = Query(default=200, ge=20, le=1000),
     service: MarketService = Depends(get_market_service),
 ) -> list[Candle]:
-    resolved = SYMBOL_MAP.get(symbol.lower(), symbol.upper())
     try:
-        return await service.get_candles(resolved, granularity, limit)
+        return await service.get_candles(symbol.upper(), market, None, limit)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"candles unavailable: {exc}")
 
 
-# ---- Generic catch-all for any other supported symbol ----------------------
-@router.get("/{symbol}", response_model=MarketSnapshot)
-async def market_generic(
-    symbol: str = Path(description="Friendly key (btc) or full symbol (BTCUSDT)"),
-    service: MarketService = Depends(get_market_service),
-):
-    resolved = SYMBOL_MAP.get(symbol.lower(), symbol.upper())
-    return await _snapshot(resolved, service)
+# ---- Legacy spot per-coin endpoints ---------------------------------------
+def _legacy(symbol: str):
+    async def handler(service: MarketService = Depends(get_market_service)) -> MarketSnapshot:
+        return await _snapshot(symbol, MarketType.SPOT, service)
+    return handler
+
+
+for _key, _sym in SYMBOL_MAP.items():
+    router.add_api_route(f"/market/{_key}", _legacy(_sym), response_model=MarketSnapshot, tags=["market"])

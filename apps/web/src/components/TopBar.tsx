@@ -29,6 +29,15 @@ export function TopBar({ showJournalLink = true }: { showJournalLink?: boolean }
       </div>
 
       <div className="flex items-center gap-6">
+        <Link href="/room" className="eyebrow transition-colors hover:text-gold" style={{ color: "#C9A227" }}>
+          Performance Room ▸
+        </Link>
+        <Link href="/dashboard" className="eyebrow transition-colors hover:text-gold">
+          Portfolio →
+        </Link>
+        <Link href="/compliance" className="eyebrow transition-colors hover:text-gold">
+          Submission →
+        </Link>
         <Link
           href={showJournalLink ? "/journal" : "/"}
           className="eyebrow transition-colors hover:text-gold"

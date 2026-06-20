@@ -12,7 +12,7 @@ services:
     rootDir: apps/api
     dockerfilePath: ./Dockerfile
     # Use a paid instance so the always-on session truly stays warm (free tier idles).
-    plan: free
+    plan: starter
     healthCheckPath: /health
     autoDeploy: true
     envVars:

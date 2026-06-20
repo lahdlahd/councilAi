@@ -19,7 +19,7 @@ import time
 import websockets
 
 from app.config import SUPPORTED_SYMBOLS, Settings
-from app.domain.enums import ConnectionState, DataSource
+from app.domain.enums import ConnectionState, DataSource, MarketType
 from app.domain.events import ConnectionStatusEvent, MarketTickEvent
 from app.domain.models import MarketSnapshot
 from app.services.hub.broadcaster import Broadcaster
@@ -132,7 +132,7 @@ class BitgetWsConsumer:
             return None
 
         change_ratio = float(row.get("change24h") or 0.0)
-        cached = self._market.peek_cached(symbol)
+        cached = self._market.peek_cached(symbol, MarketType.SPOT)
         return MarketSnapshot(
             symbol=symbol,
             price=price,

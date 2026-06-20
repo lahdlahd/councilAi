@@ -45,3 +45,15 @@ class SupabaseClient:
             return r.json()
 
         return await with_retry(_call, label=f"supabase select {table}", attempts=2)
+
+    async def update(self, table: str, match: dict[str, str], patch: dict) -> None:
+        """PATCH rows matching `match` (PostgREST filter values, e.g. {'id': 'eq.x'})."""
+        headers = {**self._auth, "Content-Type": "application/json", "Prefer": "return=minimal"}
+
+        async def _call() -> None:
+            r = await self._http.patch(
+                f"{self._base}/{table}", headers=headers, params=match, json=patch
+            )
+            r.raise_for_status()
+
+        await with_retry(_call, label=f"supabase update {table}", attempts=2)
