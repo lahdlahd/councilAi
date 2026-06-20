@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { CouncilChamber } from "@/components/chamber/CouncilChamber";
 import { ConfidenceDial } from "@/components/confidence/ConfidenceDial";
 import { ConveneControls } from "@/components/convene/ConveneControls";
+import { SessionCompletionOverlay } from "@/components/session/SessionCompletionOverlay";
 import { SessionTimeline } from "@/components/session/SessionTimeline";
 import { VetoOverlay } from "@/components/veto/VetoOverlay";
 import { useCouncilStream } from "@/hooks/useStreams";
@@ -92,7 +93,7 @@ export default function PerformanceRoom() {
               {live ? `In session · ${symbol ?? ""}` : "Council idle"}
             </span>
           </span>
-          <Link href="/" className="eyebrow transition-colors hover:text-gold">← Console</Link>
+          <Link href="/console" className="eyebrow transition-colors hover:text-gold">← Console</Link>
         </div>
       </header>
 
@@ -199,6 +200,7 @@ export default function PerformanceRoom() {
       </main>
 
       <VetoOverlay />
+      <SessionCompletionOverlay />
     </div>
   );
 }

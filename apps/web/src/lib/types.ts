@@ -46,6 +46,15 @@ export interface MarketSnapshot {
   market: MarketType;
 }
 
+export type SizingMode = "percent" | "fixed";
+export type RiskLevel = "conservative" | "moderate" | "aggressive";
+
+export interface TradeConfig {
+  sizingMode: SizingMode;
+  sizeValue: number;
+  riskLevel: RiskLevel;
+}
+
 export interface SymbolInfo {
   symbol: string;
   base: string;
@@ -161,11 +170,12 @@ export type WsEvent =
   | { type: "vote.cast"; vote: Vote }
   | { type: "council.confidence"; score: number; breakdown: ConfidenceBreakdown }
   | { type: "council.veto"; veto: VetoInfo }
-  | { type: "council.recommendation"; recommendation: Recommendation };
+  | { type: "council.recommendation"; recommendation: Recommendation }
+  | { type: "paper.trade"; trade: PaperTrade };
 
 // ---- Paper trading / ledger ------------------------------------------------
 export type TradeDirection = "long" | "short";
-export type TradeStatus = "open" | "closed" | "cancelled";
+export type TradeStatus = "open" | "closed" | "cancelled" | "vetoed";
 
 export interface LedgerEntry {
   tradeId: string;
@@ -181,6 +191,18 @@ export interface LedgerEntry {
   status: TradeStatus;
   confidence: number | null;
   sessionId: string | null;
+  // Canonical trade schema (shared with PaperTrade).
+  id: string;
+  asset: string;
+  timestamp: number;
+  directionSignal: "BUY" | "SELL";
+  quantityExecuted: number;
+  quantityRequested: number | null;
+  riskAdjustedQuantity: number | null;
+  confidenceScore: number | null;
+  councilReasoning: string | null;
+  reasoning: string | null;
+  pnlPercent: number;
 }
 
 export interface LedgerPage {
@@ -210,7 +232,21 @@ export interface PaperTrade {
   confidence: number | null;
   reasoning: string | null;
   fee: number;
+  userRequestedSize: number | null;
+  riskAdjustedSize: number | null;
+  finalExecutedSize: number | null;
   realizedPnl: number;
+  // Canonical trade schema (shared with LedgerEntry across journal/replay/portfolio).
+  asset: string;
+  timestamp: number;
+  directionSignal: "BUY" | "SELL";
+  quantityRequested: number | null;
+  quantityExecuted: number;
+  riskAdjustedQuantity: number | null;
+  confidenceScore: number | null;
+  councilReasoning: string | null;
+  pnlUsd: number;
+  pnlPercent: number;
   unrealizedPnl: number | null;
   currentValue: number | null;
   pnlPct: number | null;

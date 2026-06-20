@@ -107,6 +107,7 @@ class PaperStore:
     # ---- writes (best-effort) ---------------------------------------------
     async def persist_open(self, portfolio: Portfolio, result: OpenResult) -> None:
         if self._sb is None:
+            log.debug("persist skipped (supabase disabled) — trade %s in memory only", result.trade.id)
             return
         try:
             if result.closed is not None:
@@ -123,8 +124,12 @@ class PaperStore:
                 await self._sb.insert("paper_trades", _trade_row(result.trade, self._pid), upsert=True)
             await self._record_event(portfolio, result.trade, result.action)
             await self.upsert_portfolio(portfolio)
+            log.info(
+                "DB persist OK — trade=%s action=%s session=%s",
+                result.trade.id, result.action.value, result.trade.session_id,
+            )
         except Exception as exc:  # noqa: BLE001
-            log.warning("persist_open failed: %s", exc)
+            log.warning("DB persist FAILED — trade=%s: %s", result.trade.id, exc)
 
     async def _record_event(self, portfolio: Portfolio, t: PaperTrade, action: TradeAction) -> None:
         if self._sb is None:

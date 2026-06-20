@@ -30,6 +30,7 @@ class TradeStatus(str, Enum):
     OPEN = "open"
     CLOSED = "closed"
     CANCELLED = "cancelled"
+    VETOED = "vetoed"     # decision blocked by Risk Manager (no position opened)
 
 
 class TradeAction(str, Enum):
@@ -69,3 +70,18 @@ class Phase(str, Enum):
     VOTING = "voting"
     DECIDED = "decided"
     BLOCKED = "blocked"      # risk veto
+
+
+class SizingMode(str, Enum):
+    """How the user expresses their position-size limit."""
+
+    PERCENT = "percent"   # share of portfolio equity
+    FIXED = "fixed"       # fixed USDT notional
+
+
+class RiskLevel(str, Enum):
+    """User risk appetite — scales the council's suggested size within the cap."""
+
+    CONSERVATIVE = "conservative"
+    MODERATE = "moderate"
+    AGGRESSIVE = "aggressive"

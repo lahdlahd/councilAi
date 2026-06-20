@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.domain.enums import MarketType
+from app.domain.models import TradeConfig
 from app.services.council.session import SessionManager
 
 router = APIRouter(prefix="/council", tags=["council"])
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/council", tags=["council"])
 class StartRequest(BaseModel):
     symbol: str
     market: MarketType = MarketType.SPOT
+    trade_config: TradeConfig | None = None
 
 
 def _sessions(request: Request) -> SessionManager:
@@ -43,4 +45,4 @@ async def start_council(body: StartRequest, request: Request) -> dict:
     symbol = body.symbol.strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
-    return await _sessions(request).start(symbol, body.market)
+    return await _sessions(request).start(symbol, body.market, body.trade_config)

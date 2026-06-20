@@ -31,6 +31,9 @@ from app.domain.models import (
 )
 from app.services.paper.analytics import build_analytics
 from app.services.paper.manager import PortfolioManager
+from app.utils.logging import get_logger
+
+log = get_logger("api.portfolio")
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -74,7 +77,9 @@ async def get_ledger(
     offset: int = Query(default=0, ge=0),
 ) -> LedgerPage:
     """Paginated trade ledger — every paper trade with live current price and PnL."""
-    return await _mgr(request).ledger_page(limit, offset)
+    page = await _mgr(request).ledger_page(limit, offset)
+    log.info("GET /portfolio/ledger -> %d items (total=%d offset=%d)", len(page.items), page.total, offset)
+    return page
 
 
 @router.get("/compliance", response_model=ComplianceReport)

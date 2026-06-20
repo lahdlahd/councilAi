@@ -10,6 +10,7 @@ import type {
   MarketSnapshot,
   MarketType,
   SymbolInfo,
+  TradeConfig,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -46,11 +47,15 @@ export async function fetchCandles(
 }
 
 // ---- Council control -------------------------------------------------------
-export async function startCouncil(symbol: string, market: MarketType): Promise<void> {
+export async function startCouncil(
+  symbol: string,
+  market: MarketType,
+  tradeConfig?: TradeConfig
+): Promise<void> {
   const r = await fetch(`${API_BASE}/council/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, market }),
+    body: JSON.stringify({ symbol, market, trade_config: tradeConfig ?? null }),
   });
   if (!r.ok) throw new Error(`start failed: ${r.status}`);
 }

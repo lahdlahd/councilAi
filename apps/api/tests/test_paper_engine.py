@@ -186,3 +186,119 @@ async def test_spot_and_futures_positions_coexist():
     assert ("BTCUSDT", "futures") in portfolio.open
     assert portfolio.open[("BTCUSDT", "spot")].direction is TradeDirection.LONG
     assert portfolio.open[("BTCUSDT", "futures")].direction is TradeDirection.SHORT
+
+
+# --- User-defined position sizing (Trade Configuration) -----------------------
+
+from app.domain.enums import RiskLevel, SizingMode  # noqa: E402
+from app.domain.models import TradeConfig  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_percent_cap_limits_notional():
+    engine, portfolio, _ = _engine()
+    # 5% of a 100k book = 5,000 cap; futures so margin-free (not cash-limited).
+    cfg = TradeConfig(sizing_mode=SizingMode.PERCENT, size_value=5, risk_level=RiskLevel.MODERATE)
+    trade = await engine.on_recommendation(
+        _rec(Side.BUY, confidence=100.0), _snapshot(market=MarketType.FUTURES), "s", trade_config=cfg
+    )
+    assert trade is not None
+    notional = trade.quantity * trade.entry_price
+    assert notional <= 5_000.0 + 1e-6
+
+
+@pytest.mark.asyncio
+async def test_fixed_usdt_cap():
+    engine, *_ = _engine()
+    cfg = TradeConfig(sizing_mode=SizingMode.FIXED, size_value=750, risk_level=RiskLevel.AGGRESSIVE)
+    trade = await engine.on_recommendation(
+        _rec(Side.BUY, confidence=100.0), _snapshot(market=MarketType.FUTURES), "s", trade_config=cfg
+    )
+    assert trade is not None
+    notional = trade.quantity * trade.entry_price
+    assert notional <= 750.0 + 1e-6  # never exceeds the user's hard cap
+
+
+@pytest.mark.asyncio
+async def test_aggressive_sizes_larger_than_conservative():
+    def size_for(level: RiskLevel) -> float:
+        engine, *_ = _engine()
+        cfg = TradeConfig(sizing_mode=SizingMode.PERCENT, size_value=50, risk_level=level)
+        q, _fee = engine._size(80.0, 50_000.0, TradeDirection.SHORT, MarketType.FUTURES, cfg)
+        return q * 50_000.0
+
+    assert size_for(RiskLevel.AGGRESSIVE) > size_for(RiskLevel.CONSERVATIVE)
+
+
+@pytest.mark.asyncio
+async def test_cap_below_floor_skips_trade():
+    engine, *_ = _engine()
+    # 0.01% of 100k = 10 USDT, below the 25 USDT min notional -> no trade.
+    cfg = TradeConfig(sizing_mode=SizingMode.PERCENT, size_value=0.01, risk_level=RiskLevel.MODERATE)
+    trade = await engine.on_recommendation(
+        _rec(Side.BUY, confidence=100.0), _snapshot(market=MarketType.FUTURES), "s", trade_config=cfg
+    )
+    assert trade is None
+
+
+@pytest.mark.asyncio
+async def test_trade_stores_sizing_breakdown():
+    engine, *_ = _engine()
+    cfg = TradeConfig(sizing_mode=SizingMode.PERCENT, size_value=20, risk_level=RiskLevel.MODERATE)
+    trade = await engine.on_recommendation(
+        _rec(Side.BUY, confidence=100.0), _snapshot(market=MarketType.FUTURES), "s", trade_config=cfg
+    )
+    assert trade is not None
+    assert trade.user_requested_size is not None
+    assert trade.risk_adjusted_size is not None
+    assert trade.final_executed_size is not None
+    # Final never exceeds the user's requested cap.
+    assert trade.final_executed_size <= trade.user_requested_size + 1e-6
+
+
+@pytest.mark.asyncio
+async def test_high_volatility_reduces_size_and_annotates_reasoning():
+    engine, *_ = _engine()
+    snap = _snapshot(market=MarketType.FUTURES)
+    snap = snap.model_copy(update={"volatility": 0.8})  # high vol
+    cfg = TradeConfig(sizing_mode=SizingMode.PERCENT, size_value=50, risk_level=RiskLevel.MODERATE)
+    trade = await engine.on_recommendation(_rec(Side.BUY, confidence=100.0), snap, "s", trade_config=cfg)
+    assert trade is not None
+    # risk-adjusted (post-vol) is below the raw suggestion
+    assert trade.risk_adjusted_size < trade.user_requested_size
+    assert "volatility risk" in (trade.reasoning or "")
+
+
+# --- Canonical trade schema consistency --------------------------------------
+
+from app.domain.enums import TradeStatus  # noqa: E402
+from app.domain.models import LedgerEntry, PaperTrade  # noqa: E402
+
+CANONICAL_KEYS = {
+    "id", "sessionId", "timestamp", "asset", "direction", "directionSignal",
+    "entryPrice", "quantityRequested", "quantityExecuted", "riskAdjustedQuantity",
+    "confidenceScore", "councilReasoning", "status", "pnlUsd", "pnlPercent",
+}
+
+
+def test_paper_trade_and_ledger_share_canonical_schema():
+    trade = PaperTrade(
+        id="t1", session_id="s1", symbol="BTCUSDT", market=MarketType.FUTURES,
+        direction=TradeDirection.LONG, quantity=0.5, entry_price=60000.0,
+        status=TradeStatus.OPEN, confidence=72.0, reasoning="because",
+        user_requested_size=20000.0, risk_adjusted_size=15000.0, final_executed_size=12000.0,
+        unrealized_pnl=300.0, pnl_pct=2.5, opened_at=1000,
+    )
+    entry = LedgerEntry(
+        trade_id="t1", opened_at=1000, symbol="BTCUSDT", market=MarketType.FUTURES,
+        direction=TradeDirection.LONG, entry_price=60000.0, quantity=0.5,
+        current_price=60600.0, pnl_pct=2.5, pnl_usd=300.0, status=TradeStatus.OPEN,
+        confidence=72.0, session_id="s1", quantity_requested=0.3333, risk_adjusted_quantity=0.25,
+        reasoning="because",
+    )
+    td, ed = trade.model_dump(), entry.model_dump()
+    assert CANONICAL_KEYS <= set(td.keys())
+    assert CANONICAL_KEYS <= set(ed.keys())
+    # Shared values line up across the two representations.
+    for k in ("id", "sessionId", "timestamp", "asset", "directionSignal", "quantityExecuted"):
+        assert td[k] == ed[k], k

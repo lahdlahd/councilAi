@@ -39,7 +39,7 @@ export function TopBar({ showJournalLink = true }: { showJournalLink?: boolean }
           Submission →
         </Link>
         <Link
-          href={showJournalLink ? "/journal" : "/"}
+          href={showJournalLink ? "/journal" : "/console"}
           className="eyebrow transition-colors hover:text-gold"
         >
           {showJournalLink ? "Trade Journal →" : "← Live Session"}

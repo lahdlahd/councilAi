@@ -66,7 +66,7 @@ export default function TradeDetailsPage() {
   return (
     <div className="mx-auto min-h-screen max-w-4xl px-4 py-6">
       <Link
-        href="/"
+        href="/console"
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-xs text-muted transition-colors hover:text-text"
       >
         <ArrowLeft size={14} /> Back to council

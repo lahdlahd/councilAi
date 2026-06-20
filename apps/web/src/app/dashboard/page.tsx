@@ -65,7 +65,7 @@ export default function DashboardPage() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         <div className="mb-4 flex items-baseline justify-between">
           <h1 className="font-serif text-2xl font-semibold text-text">Portfolio</h1>
-          <Link href="/" className="eyebrow transition-colors hover:text-gold">← Live session</Link>
+          <Link href="/console" className="eyebrow transition-colors hover:text-gold">← Live session</Link>
         </div>
 
         {error && !p && <div className="font-mono text-sm text-negative">Could not load the portfolio.</div>}

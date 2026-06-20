@@ -7,13 +7,15 @@ Python code keeps snake_case attribute access.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.domain.enums import (
     AgentId,
     DataSource,
     MarketType,
+    RiskLevel,
     Side,
+    SizingMode,
     Stance,
     TradeAction,
     TradeDirection,
@@ -42,6 +44,23 @@ class _Base(BaseModel):
     def model_dump(self, **kwargs):  # type: ignore[override]
         kwargs.setdefault("by_alias", True)
         return super().model_dump(**kwargs)
+
+
+class TradeConfig(_Base):
+    """User-defined execution constraint, set before a session is convened.
+
+    The council still suggests an optimal size, but final execution is capped by
+    this: the Risk Manager may reduce the size, never raise it above the user's
+    limit.
+    """
+
+    sizing_mode: SizingMode = SizingMode.PERCENT
+    size_value: float = 10.0
+    risk_level: RiskLevel = RiskLevel.MODERATE
+
+    @classmethod
+    def default(cls) -> "TradeConfig":
+        return cls()
 
 
 class Macd(_Base):
@@ -210,6 +229,15 @@ class JournalEntry(_Base):
 
 
 # ---- Paper trading ---------------------------------------------------------
+# ---- Paper Trade -----------------------------------------------------------
+# CANONICAL_TRADE_SCHEMA — the single trade contract shared across the whole
+# system (portfolio engine, trade journal/ledger, replay, and the frontend):
+#   id, sessionId, timestamp, asset, direction, directionSignal (BUY/SELL),
+#   entryPrice, quantityRequested, quantityExecuted, riskAdjustedQuantity,
+#   confidenceScore, councilReasoning, status (OPEN/CLOSED/VETOED), pnlUsd,
+#   pnlPercent.
+# Both PaperTrade and LedgerEntry expose this set (mapped from internal fields)
+# so every surface speaks the same vocabulary.
 class PaperTrade(_Base):
     """A simulated position from open to close. Fills are against live Bitget
     prices; nothing is ever sent to an exchange."""
@@ -227,12 +255,75 @@ class PaperTrade(_Base):
     confidence: float | None = None
     reasoning: str | None = None
     fee: float = 0.0
+    # Sizing transparency (user-defined position size feature).
+    user_requested_size: float | None = None   # user's cap notional (USDT), if set
+    risk_adjusted_size: float | None = None     # after risk-level + volatility reduction
+    final_executed_size: float | None = None    # notional actually filled (USDT)
     realized_pnl: float = 0.0
     unrealized_pnl: float | None = None
     current_value: float | None = None   # quantity × current mark
     pnl_pct: float | None = None          # unrealized PnL as % of entry notional
     opened_at: int = Field(description="ms epoch")
     closed_at: int | None = None
+
+    # --- Canonical trade schema (shared contract; see CANONICAL_TRADE_SCHEMA) ----
+    # These mirror the internal fields under one standard set of names used by the
+    # frontend, trade journal, portfolio engine, and replay system alike.
+    @computed_field(alias="asset")
+    @property
+    def asset(self) -> str:
+        return self.symbol
+
+    @computed_field(alias="timestamp")
+    @property
+    def timestamp(self) -> int:
+        return self.opened_at
+
+    @computed_field(alias="directionSignal")
+    @property
+    def direction_signal(self) -> str:
+        return "BUY" if self.direction is TradeDirection.LONG else "SELL"
+
+    @computed_field(alias="quantityExecuted")
+    @property
+    def quantity_executed(self) -> float:
+        return self.quantity
+
+    @computed_field(alias="quantityRequested")
+    @property
+    def quantity_requested(self) -> float | None:
+        if self.user_requested_size is None or self.entry_price <= 0:
+            return None
+        return self.user_requested_size / self.entry_price
+
+    @computed_field(alias="riskAdjustedQuantity")
+    @property
+    def risk_adjusted_quantity(self) -> float | None:
+        if self.risk_adjusted_size is None or self.entry_price <= 0:
+            return None
+        return self.risk_adjusted_size / self.entry_price
+
+    @computed_field(alias="confidenceScore")
+    @property
+    def confidence_score(self) -> float | None:
+        return self.confidence
+
+    @computed_field(alias="councilReasoning")
+    @property
+    def council_reasoning(self) -> str | None:
+        return self.reasoning
+
+    @computed_field(alias="pnlUsd")
+    @property
+    def pnl_usd(self) -> float:
+        if self.status is TradeStatus.CLOSED:
+            return self.realized_pnl
+        return self.unrealized_pnl or 0.0
+
+    @computed_field(alias="pnlPercent")
+    @property
+    def pnl_percent(self) -> float:
+        return self.pnl_pct or 0.0
 
 
 class PortfolioState(_Base):
@@ -307,6 +398,51 @@ class LedgerEntry(_Base):
     status: TradeStatus
     confidence: float | None = None
     session_id: str | None = None  # council session id
+    # Carried from the trade so the journal shares the canonical schema.
+    quantity_requested: float | None = None
+    risk_adjusted_quantity: float | None = None
+    reasoning: str | None = None
+
+    # --- Canonical trade schema (same contract as PaperTrade) -------------------
+    @computed_field(alias="id")
+    @property
+    def id(self) -> str:
+        return self.trade_id
+
+    @computed_field(alias="asset")
+    @property
+    def asset(self) -> str:
+        return self.symbol
+
+    @computed_field(alias="timestamp")
+    @property
+    def timestamp(self) -> int:
+        return self.opened_at
+
+    @computed_field(alias="directionSignal")
+    @property
+    def direction_signal(self) -> str:
+        return "BUY" if self.direction is TradeDirection.LONG else "SELL"
+
+    @computed_field(alias="quantityExecuted")
+    @property
+    def quantity_executed(self) -> float:
+        return self.quantity
+
+    @computed_field(alias="confidenceScore")
+    @property
+    def confidence_score(self) -> float | None:
+        return self.confidence
+
+    @computed_field(alias="councilReasoning")
+    @property
+    def council_reasoning(self) -> str | None:
+        return self.reasoning
+
+    @computed_field(alias="pnlPercent")
+    @property
+    def pnl_percent(self) -> float:
+        return self.pnl_pct
 
 
 class LedgerPage(_Base):

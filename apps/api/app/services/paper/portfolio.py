@@ -103,6 +103,9 @@ class Portfolio:
         self, *, symbol: str, market: MarketType, direction: TradeDirection,
         quantity: float, price: float, fee: float, confidence: float | None,
         session_id: str | None, reasoning: str | None,
+        user_requested_size: float | None = None,
+        risk_adjusted_size: float | None = None,
+        final_executed_size: float | None = None,
     ) -> OpenResult:
         key = (symbol, market.value)
         existing = self.open.get(key)
@@ -123,6 +126,9 @@ class Portfolio:
             quantity=quantity, entry_price=price, last_mark_price=price,
             status=TradeStatus.OPEN, confidence=confidence, reasoning=reasoning,
             fee=fee, opened_at=_now_ms(),
+            user_requested_size=user_requested_size,
+            risk_adjusted_size=risk_adjusted_size,
+            final_executed_size=final_executed_size,
         )
         open_cost = (quantity * price + fee) if _cash_funded(market, direction) else fee
         self.cash -= open_cost

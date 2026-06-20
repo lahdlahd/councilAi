@@ -3,10 +3,42 @@
 import { ChevronDown, ChevronUp, Play } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchLedger } from "@/lib/api";
 import { fmtPrice } from "@/lib/agents";
-import type { LedgerEntry, LedgerPage } from "@/lib/types";
+import type { LedgerEntry, LedgerPage, PaperTrade } from "@/lib/types";
+import { useTradeFeed } from "@/stores/tradeFeedStore";
+
+// Map a freshly-executed trade into a ledger row for instant optimistic display.
+function toLedgerEntry(t: PaperTrade): LedgerEntry {
+  return {
+    tradeId: t.id,
+    openedAt: t.openedAt,
+    symbol: t.symbol,
+    market: t.market,
+    direction: t.direction,
+    entryPrice: t.entryPrice,
+    quantity: t.quantity,
+    currentPrice: t.lastMarkPrice ?? t.entryPrice,
+    pnlPct: t.pnlPct ?? 0,
+    pnlUsd: t.unrealizedPnl ?? 0,
+    status: t.status,
+    confidence: t.confidence,
+    sessionId: t.sessionId,
+    // Canonical fields (present on the trade payload).
+    id: t.id,
+    asset: t.asset ?? t.symbol,
+    timestamp: t.timestamp ?? t.openedAt,
+    directionSignal: t.directionSignal ?? (t.direction === "long" ? "BUY" : "SELL"),
+    quantityExecuted: t.quantityExecuted ?? t.quantity,
+    quantityRequested: t.quantityRequested ?? null,
+    riskAdjustedQuantity: t.riskAdjustedQuantity ?? null,
+    confidenceScore: t.confidenceScore ?? t.confidence,
+    councilReasoning: t.councilReasoning ?? t.reasoning ?? null,
+    reasoning: t.reasoning ?? null,
+    pnlPercent: t.pnlPercent ?? t.pnlPct ?? 0,
+  };
+}
 
 const PAGE_SIZE = 10;
 const POSITIVE = "#2B8A6E";
@@ -100,6 +132,10 @@ export function TradeLedger() {
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState<LedgerPage | null>(null);
   const [error, setError] = useState(false);
+  const tradeTick = useTradeFeed((s) => s.tick);
+  const lastTrade = useTradeFeed((s) => s.lastTrade);
+  const offsetRef = useRef(0);
+  offsetRef.current = offset;
 
   const load = useCallback(async (off: number) => {
     try {
@@ -110,13 +146,30 @@ export function TradeLedger() {
     }
   }, []);
 
-  // Fetch on open + page change, then poll every 3s for live current price / PnL.
+  // Always keep the ledger fresh — even collapsed — so the count is accurate.
+  // Poll faster while open (live current price / PnL); slower while collapsed.
   useEffect(() => {
-    if (!open) return;
     load(offset);
-    const id = setInterval(() => load(offset), 3000);
+    const id = setInterval(() => load(offset), open ? 3000 : 6000);
     return () => clearInterval(id);
   }, [open, offset, load]);
+
+  // Real-time: a "paper.trade" WS event fired — append the new trade instantly
+  // (optimistic, newest-first, deduped) and refetch to reconcile authoritatively.
+  useEffect(() => {
+    if (!lastTrade || tradeTick === 0) return;
+    if (offsetRef.current === 0) {
+      const entry = toLedgerEntry(lastTrade);
+      setPage((prev) =>
+        prev && !prev.items.some((i) => i.tradeId === entry.tradeId)
+          ? { ...prev, items: [entry, ...prev.items].slice(0, PAGE_SIZE), total: prev.total + 1 }
+          : prev
+      );
+      load(0);
+    } else {
+      setOffset(0); // jump to newest page; the poll/load effect fetches it
+    }
+  }, [tradeTick, lastTrade, load]);
 
   const total = page?.total ?? 0;
   const start = total === 0 ? 0 : offset + 1;

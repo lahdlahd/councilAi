@@ -263,15 +263,15 @@ class SessionManager:
             confidence_breakdown=ev.confidence_breakdown, recommendation=ev.recommendation,
         )
 
-    async def start(self, symbol: str, market: MarketType) -> dict:
+    async def start(self, symbol: str, market: MarketType, trade_config=None) -> dict:
         """Convene the council on a symbol+market. One round; rejects if already running."""
         if self._lock.locked():
             return {"status": "busy", "session": self._live.session_id if self._live else None}
         # Kick off in the background so the HTTP request returns immediately.
-        asyncio.create_task(self._run(symbol, market))
+        asyncio.create_task(self._run(symbol, market, trade_config))
         return {"status": "started", "symbol": symbol, "market": market.value}
 
-    async def _run(self, symbol: str, market: MarketType) -> None:
+    async def _run(self, symbol: str, market: MarketType, trade_config=None) -> None:
         from app.services.council.graph import COMMITTEE_ORDER
 
         async with self._lock:
@@ -292,6 +292,7 @@ class SessionManager:
                 if self._paper_engine is not None:
                     await self._paper_engine.on_recommendation(
                         self._live.recommendation, self._live.snapshot, self._live.session_id,
+                        trade_config=trade_config,
                     )
 
                 # Retain the finished session for the Trade Details page (offline-safe).

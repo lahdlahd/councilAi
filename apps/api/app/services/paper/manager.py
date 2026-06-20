@@ -171,6 +171,11 @@ class PortfolioManager:
             current_price=current, pnl_pct=round(pnl_usd / cost * 100.0, 4) if cost else 0.0,
             pnl_usd=round(pnl_usd, 6), status=t.status, confidence=t.confidence,
             session_id=t.session_id,
+            quantity_requested=(t.user_requested_size / t.entry_price)
+            if (t.user_requested_size and t.entry_price > 0) else None,
+            risk_adjusted_quantity=(t.risk_adjusted_size / t.entry_price)
+            if (t.risk_adjusted_size and t.entry_price > 0) else None,
+            reasoning=t.reasoning,
         )
 
     async def ledger_page(self, limit: int = 25, offset: int = 0) -> LedgerPage:
